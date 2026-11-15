@@ -82,17 +82,25 @@ def _graphql(session: requests.Session, query: str, variables: dict) -> dict:
         except requests.RequestException as exc:
             last_error = f"network error: {exc}"
         else:
+            # One line, so it reads cleanly as a GitHub Actions annotation.
+            body = " ".join(resp.text.split())[:200]
             if resp.status_code == 200:
-                payload = resp.json()
-                if payload.get("errors"):
-                    messages = "; ".join(e.get("message", "?") for e in payload["errors"])
-                    raise FetchError(f"GraphQL error: {messages}")
-                if not payload.get("data") or payload["data"].get("user") is None:
-                    raise FetchError("GraphQL response has no user data")
-                return payload["data"]
-            if resp.status_code in (401, 403) and "rate limit" not in resp.text.lower():
-                raise FetchError(f"HTTP {resp.status_code}: check the token ({resp.text[:200]})")
-            last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                try:
+                    payload = resp.json()
+                except ValueError:
+                    payload = None
+                    last_error = f"malformed JSON response: {body}"
+                if payload is not None:
+                    if payload.get("errors"):
+                        messages = "; ".join(e.get("message", "?") for e in payload["errors"])
+                        raise FetchError(f"GraphQL error: {messages}")
+                    if not payload.get("data") or payload["data"].get("user") is None:
+                        raise FetchError("GraphQL response has no user data")
+                    return payload["data"]
+            elif resp.status_code in (401, 403) and "rate limit" not in body.lower():
+                raise FetchError(f"HTTP {resp.status_code}: check the token ({body})")
+            else:
+                last_error = f"HTTP {resp.status_code}: {body}"
         if attempt < MAX_ATTEMPTS:
             time.sleep(2 ** attempt)
     raise FetchError(f"giving up after {MAX_ATTEMPTS} attempts ({last_error})")
