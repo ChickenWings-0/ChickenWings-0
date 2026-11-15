@@ -1,0 +1,52 @@
+name: Terrain map
+
+on:
+  schedule:
+    # Sundays at 03:17 UTC (off the hour, when scheduled runs queue less).
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: terrain-map
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # PROFILE_TOKEN (a personal access token) includes private contributions;
+      # without it the built-in GITHUB_TOKEN still sees public activity.
+      # If the API fails, the script keeps the existing SVGs and exits 0,
+      # so the next step finds nothing to commit.
+      - name: Generate the map
+        env:
+          GH_TOKEN: ${{ secrets.PROFILE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: python scripts/generate_terrain.py
+
+      - name: Commit if the map changed
+        run: |
+          git add assets/terrain-light.svg assets/terrain-dark.svg
+          if git diff --cached --quiet; then
+            echo "Map unchanged, nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update terrain map"
+          git push
