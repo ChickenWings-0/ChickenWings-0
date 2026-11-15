@@ -43,8 +43,9 @@ WARP_AMPLITUDE = 20.0      # max displacement of the domain warp, map units
 MASSIF_SIGMA = 52.0        # blur radius of the broad massif layer, map units
 MASSIF_WEIGHT = 0.35       # share of the massif layer in the final relief
 RELIEF = 0.12              # +- strength of the mid-frequency flank relief
-DISPLAY_GAMMA = 0.72       # < 1 widens foothills and spaces out summit contours
-SMOOTH_SIGMA = 2.5         # final blur, in cells
+FOOTHILL_LIFT = 3.0        # > 0 widens foothills and spaces out summit contours
+SMOOTH_SIGMA = 2.5         # blur of the summed hills, in cells
+FINAL_SIGMA = 1.5          # last light blur of the finished field, in cells
 BASE_AMPLITUDE = 0.1     # noise floor height relative to the highest peak
 
 
@@ -170,13 +171,17 @@ def build_field(activity: Activity) -> HeightField:
             lane_raw[li] += amp * np.outer(gy, gx)
 
     # 3. Domain warp: sample every lane through the same displacement field.
+    #    Long wavelengths only: if the displacement changed faster than the
+    #    distance it covers, the field would fold over and contours would
+    #    grow cusps.
     warp_seed = _seed(activity.login, "warp")
-    dx = (_fbm((ny, nx), warp_seed) - 0.5) * 2 * WARP_AMPLITUDE / CELL
-    dy = (_fbm((ny, nx), warp_seed + 1) - 0.5) * 2 * WARP_AMPLITUDE / CELL
+    warp_octaves = ((4, 2, 1.0), (8, 4, 0.4))
+    dx = (_fbm((ny, nx), warp_seed, warp_octaves) - 0.5) * 2 * WARP_AMPLITUDE / CELL
+    dy = (_fbm((ny, nx), warp_seed + 1, warp_octaves) - 0.5) * 2 * WARP_AMPLITUDE / CELL
     rows, cols = np.mgrid[0:ny, 0:nx].astype(float)
     coords = np.array([rows + dy, cols + dx])
     lane_z = np.stack([
-        ndimage.map_coordinates(layer, coords, order=1, mode="nearest") for layer in lane_raw
+        ndimage.map_coordinates(layer, coords, order=3, mode="nearest") for layer in lane_raw
     ]) if len(lanes) else np.zeros((0, ny, nx))
 
     # 4. Smooth away grid artefacts and normalise to the highest summit.
@@ -194,12 +199,15 @@ def build_field(activity: Activity) -> HeightField:
     act = ndimage.gaussian_filter(act * (1 - RELIEF + 2 * RELIEF * relief), SMOOTH_SIGMA / 2)
     act = act / (act.max() or 1.0)
     # Lift the foothills: more contour lines on the lower slopes and less
-    # crowding near the summits, the way real mountains are shaped.
-    act = act ** DISPLAY_GAMMA
+    # crowding near the summits, the way real mountains are shaped. A log
+    # curve rather than a power: its slope at zero is finite, so microscopic
+    # ripples on flat ground are not blown up into wiggly contours.
+    act = np.log1p(FOOTHILL_LIFT * np.clip(act, 0, None)) / np.log1p(FOOTHILL_LIFT)
 
     # 5. A gentle seeded floor, mostly long wavelengths.
     base = _fbm((ny, nx), _seed(activity.login, "base"), octaves=((4, 2, 1.0), (9, 4, 0.45), (18, 8, 0.15)))
     z = BASE_AMPLITUDE * base + (1 - BASE_AMPLITUDE) * act
+    z = ndimage.gaussian_filter(z, FINAL_SIGMA)
     z = (z - z.min()) / (z.max() - z.min())
     return HeightField(z=z, lanes=lanes, lane_z=lane_z)
 
