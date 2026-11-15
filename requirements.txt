@@ -1,0 +1,17 @@
+# Runtime dependencies for scripts/generate_terrain.py (exact pins for reproducible output).
+numpy==2.4.6
+scipy==1.17.1
+scikit-image==0.26.0
+requests==2.34.2
+
+# Transitive pins (scikit-image / requests), kept explicit so CI matches local runs.
+imageio==2.38.1
+lazy-loader==0.6
+networkx==3.6.1
+packaging==26.3
+pillow==13.0.0
+tifffile==2026.3.3
+certifi==2026.10.23
+charset-normalizer==3.5.2
+idna==3.20
+urllib3==2.8.0
