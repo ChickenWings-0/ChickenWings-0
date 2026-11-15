@@ -26,6 +26,7 @@ MAX_NAMED = 5
 MAX_UNNAMED = 2
 UNNAMED_MIN_HEIGHT = 0.5   # unnamed spot heights only on prominent summits
 FRAME_INSET = 7.0          # keep labels this far inside the neatline
+MARKER_INSET = 3.0         # spot heights may sit a little closer to it
 PAD = 4.0                  # minimum gap between any two boxes
 NAME_MAX_CHARS = 20
 
@@ -76,6 +77,7 @@ class PlacedLabel:
     summit: Summit
     number: str                    # spot height text
     marker_box: Box                # triangle + number
+    number_left: bool = False      # number set left of the triangle (near the east edge)
     name: str | None = None        # repo name, None for unnamed summits
     month: str | None = None       # e.g. "APR 2026"
     anchor: str = "start"          # text-anchor of the name block
@@ -100,10 +102,23 @@ def display_name(name: str) -> str:
     return short if len(short) >= 4 else name[: NAME_MAX_CHARS - 1] + "…"
 
 
-def _marker_box(s: Summit, number: str) -> Box:
-    # Triangle centred on the summit, number set to its right (see render.py).
+def _marker_box(s: Summit, number: str, left: bool = False) -> Box:
+    # Triangle centred on the summit, number beside it (see render.py).
     w = text_width(number, SPOT_SIZE)
+    if left:
+        return Box(s.x - 7 - w, s.y - 6.5, s.x + 5, s.y + 4.5)
     return Box(s.x - 5, s.y - 6.5, s.x + 7 + w, s.y + 4.5)
+
+
+def _fit_marker(s: Summit, width: float, height: float) -> PlacedLabel | None:
+    """Spot height with its number on the right, or on the left when the
+    summit is close to the east edge; None if neither fits in the frame."""
+    number = str(s.count)
+    for left in (False, True):
+        box = _marker_box(s, number, left)
+        if box.inside(width, height, inset=MARKER_INSET):
+            return PlacedLabel(summit=s, number=number, marker_box=box, number_left=left)
+    return None
 
 
 def _candidates(s: Summit, marker: Box, w: float, h: float):
@@ -112,7 +127,7 @@ def _candidates(s: Summit, marker: Box, w: float, h: float):
     for gap in (6.0, 16.0, 28.0):
         yield "start", marker.x1 + gap, cy                       # right
         yield "middle", s.x, marker.y0 - gap - h                 # above
-        yield "end", s.x - 7 - gap, cy                           # left
+        yield "end", marker.x0 - gap, cy                         # left
         yield "middle", s.x, marker.y1 + gap                     # below
         yield "start", s.x + 2 + gap, marker.y0 - gap - h        # upper right
         yield "end", s.x - 2 - gap, marker.y0 - gap - h          # upper left
@@ -148,10 +163,8 @@ def choose_summits(summits: list[Summit]) -> tuple[list[Summit], list[Summit]]:
 
 def place_labels(field: HeightField, summits: list[Summit], activity: Activity) -> list[PlacedLabel]:
     named, unnamed = choose_summits(summits)
-    labels = [PlacedLabel(summit=s, number=str(s.count), marker_box=_marker_box(s, str(s.count)))
-              for s in named + unnamed]
-    # Markers must sit fully inside the frame; drop any that don't.
-    labels = [lb for lb in labels if lb.marker_box.inside(field.width, field.height)]
+    # Markers must sit fully inside the frame; drop any that can't.
+    labels = [lb for s in named + unnamed if (lb := _fit_marker(s, field.width, field.height))]
 
     placed: list[PlacedLabel] = []
     for lb in labels:

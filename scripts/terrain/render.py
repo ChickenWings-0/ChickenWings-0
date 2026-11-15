@@ -153,11 +153,12 @@ def _grid_and_ticks(field: HeightField, activity: Activity) -> tuple[str, str]:
     return "\n".join(grid), tick_path + "\n" + "\n".join(labels)
 
 
-def _spot(x: float, y: float, number: str, knockout: bool = False) -> str:
-    """Spot height: small triangle on the point, number to its right."""
+def _spot(x: float, y: float, number: str, knockout: bool = False, left: bool = False) -> str:
+    """Spot height: small triangle on the point, number beside it."""
     tri = "" if knockout else ' class="tri"'
+    text_x, anchor = (x - 7, ' text-anchor="end"') if left else (x + 7, "")
     return (f'<path d="M{_f(x)} {_f(y - 4.5)}l4 7h-8z"{tri}/>'
-            f'<text x="{_f(x + 7)}" y="{_f(y + 3.2)}" font-size="{SPOT_SIZE}">{number}</text>')
+            f'<text x="{_f(text_x)}" y="{_f(y + 3.2)}" font-size="{SPOT_SIZE}"{anchor}>{number}</text>')
 
 
 def _swatch(x: float, y: float, cls: str) -> str:
@@ -171,7 +172,7 @@ def _summits(labels: list[PlacedLabel], knockout: bool = False) -> str:
     out = ['<g class="ko">' if knockout else '<g class="lb">']
     for lb in labels:
         s = lb.summit
-        out.append("<g>" + _spot(s.x, s.y, lb.number, knockout))
+        out.append("<g>" + _spot(s.x, s.y, lb.number, knockout, lb.number_left))
         if lb.name:
             out.append(f'<text x="{_f(lb.text_x)}" y="{_f(lb.name_y)}" font-size="{NAME_SIZE}" '
                        f'text-anchor="{lb.anchor}" class="serif">{escape(lb.name)}</text>')

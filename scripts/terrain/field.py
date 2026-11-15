@@ -38,8 +38,11 @@ CELL = 2.0
 MAX_LANES = 8              # top repositories + 1 merged lane
 HILL_SIGMA_WEEKS = 1.35    # along-time spread of one week's hill
 HILL_SIGMA_LANE = 0.42     # across-lane spread, as a fraction of lane spacing
+MAX_LANE_SPACING = 64.0    # cap on the spacing used for hill width, map units
 MEANDER = 0.28             # ridge wander across its lane, fraction of spacing
 WARP_AMPLITUDE = 20.0      # max displacement of the domain warp, map units
+WARP_EDGE_FADE = 60.0      # warp fades to zero this close to the east/west edges
+EDGE_MARGIN = 14.0         # hill centres stay at least this far from those edges
 MASSIF_SIGMA = 52.0        # blur radius of the broad massif layer, map units
 MASSIF_WEIGHT = 0.35       # share of the massif layer in the final relief
 RELIEF = 0.12              # +- strength of the mid-frequency flank relief
@@ -151,7 +154,9 @@ def build_field(activity: Activity) -> HeightField:
     spacing = MAP_HEIGHT / max(len(lanes), 1)
     week_w = MAP_WIDTH / N_WEEKS
     sx = HILL_SIGMA_WEEKS * week_w
-    sy = HILL_SIGMA_LANE * spacing
+    # With only a few lanes, spacing gets large; cap the hill width so a
+    # lone repository still forms a mountain rather than a full-height wall.
+    sy = HILL_SIGMA_LANE * min(spacing, MAX_LANE_SPACING)
 
     # 2. One Gaussian per repo-week. Separable, so build it as an outer
     #    product of an x-profile and a y-profile. Centres get a small seeded
@@ -166,7 +171,10 @@ def build_field(activity: Activity) -> HeightField:
         jitter_y = walk / (np.abs(walk).max() or 1.0) * MEANDER * spacing
         for w in np.nonzero(lane.weekly)[0]:
             amp = np.log1p(lane.weekly[w])
-            gx = np.exp(-0.5 * ((xs - week_x(w) - jitter_x[w]) / sx) ** 2)
+            # Keep centres off the very edge so first/current-week hills
+            # still have a summit inside the frame.
+            cx = np.clip(week_x(w) + jitter_x[w], EDGE_MARGIN, MAP_WIDTH - EDGE_MARGIN)
+            gx = np.exp(-0.5 * ((xs - cx) / sx) ** 2)
             gy = np.exp(-0.5 * ((ys - lane.y - jitter_y[w]) / sy) ** 2)
             lane_raw[li] += amp * np.outer(gy, gx)
 
@@ -178,6 +186,13 @@ def build_field(activity: Activity) -> HeightField:
     warp_octaves = ((4, 2, 1.0), (8, 4, 0.4))
     dx = (_fbm((ny, nx), warp_seed, warp_octaves) - 0.5) * 2 * WARP_AMPLITUDE / CELL
     dy = (_fbm((ny, nx), warp_seed + 1, warp_octaves) - 0.5) * 2 * WARP_AMPLITUDE / CELL
+    # Fade the warp out towards the east and west edges, so hills in the
+    # first and the current week stay inside the frame instead of being
+    # pushed off the sheet.
+    edge = np.minimum(xs, MAP_WIDTH - xs) / WARP_EDGE_FADE
+    taper = np.clip(edge, 0, 1) ** 2 * (3 - 2 * np.clip(edge, 0, 1))   # smoothstep
+    dx *= taper
+    dy *= taper
     rows, cols = np.mgrid[0:ny, 0:nx].astype(float)
     coords = np.array([rows + dy, cols + dx])
     lane_z = np.stack([
@@ -218,7 +233,7 @@ def find_summits(field: HeightField, activity: Activity, limit: int = 12) -> lis
     """Local maxima of the field, highest first, attributed to a lane."""
     ny, nx = field.shape
     peaks = peak_local_max(field.z, min_distance=int(40 / CELL), threshold_abs=BASE_AMPLITUDE + 0.08,
-                           exclude_border=int(10 / CELL))
+                           exclude_border=3)
     summits = []
     for row, col in peaks:
         li = int(np.argmax(field.lane_z[:, row, col]))
