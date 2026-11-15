@@ -147,7 +147,7 @@ def _grid_and_ticks(field: HeightField, activity: Activity) -> tuple[str, str]:
         text = d.strftime("%b").upper()
         if d.month == 1 or d == names[1]:
             text += f" ’{d.strftime('%y')}"
-        labels.append(f'<text x="{_f((a + b) / 2)}" y="{_f(H + 16)}" font-size="8.5" '
+        labels.append(f'<text x="{_f((a + b) / 2)}" y="{_f(H + 17)}" font-size="9.5" '
                       f'class="caps muted" text-anchor="middle">{text}</text>')
     tick_path = f'<path d="{"".join(ticks)}" stroke="currentColor" stroke-width=".8" fill="none"/>'
     return "\n".join(grid), tick_path + "\n" + "\n".join(labels)
@@ -188,11 +188,11 @@ def _coordinates(field: HeightField) -> str:
     x0, y0 = FRAME_X, FRAME_Y
     x1, y1 = x0 + W, y0 + H
     return "\n".join([
-        f'<text x="{x0}" y="{y0 - 10}" font-size="9" class="muted">{_dms(LON_W, "E")}</text>',
-        f'<text x="{x1}" y="{y0 - 10}" font-size="9" class="muted" text-anchor="end">{_dms(LON_E, "E")}</text>',
-        f'<text transform="translate({x0 - 10} {y0}) rotate(-90)" font-size="9" class="muted" '
+        f'<text x="{x0}" y="{y0 - 11}" font-size="10" class="muted">{_dms(LON_W, "E")}</text>',
+        f'<text x="{x1}" y="{y0 - 11}" font-size="10" class="muted" text-anchor="end">{_dms(LON_E, "E")}</text>',
+        f'<text transform="translate({x0 - 11} {y0}) rotate(-90)" font-size="10" class="muted" '
         f'text-anchor="end">{_dms(LAT_N, "N")}</text>',
-        f'<text transform="translate({x1 + 10} {y1}) rotate(90)" font-size="9" class="muted" '
+        f'<text transform="translate({x1 + 11} {y1}) rotate(90)" font-size="10" class="muted" '
         f'text-anchor="end">{_dms(LAT_S, "N")}</text>',
     ])
 
@@ -205,24 +205,24 @@ def _marginalia(field: HeightField, activity: Activity, t: Theme) -> str:
     out = []
 
     # Title block.
-    out.append(f'<text x="{x0}" y="{top}" font-size="13" font-weight="600" class="caps">{escape(activity.login)}</text>')
-    out.append(f'<text x="{x0}" y="{top + 18}" font-size="10" class="muted">Activity survey, 52 weeks to '
+    out.append(f'<text x="{x0}" y="{top}" font-size="15" font-weight="600" class="caps">{escape(activity.login)}</text>')
+    out.append(f'<text x="{x0}" y="{top + 20}" font-size="11.5" class="muted">Activity survey, 52 weeks to '
                f'{activity.end.day} {activity.end.strftime("%b %Y")}</text>')
-    out.append(f'<text x="{x0}" y="{top + 33}" font-size="10" class="muted">Relief: contributions per week, log scale</text>')
+    out.append(f'<text x="{x0}" y="{top + 37}" font-size="11.5" class="muted">Relief: contributions per week, log scale</text>')
 
     # Legend, two columns: line samples and the spot-height symbol.
-    lx, ly = x0 + 300, top - 4
+    lx, ly, col = x0 + 285, top - 4, 245
     rows = [
         (lx, ly, _swatch(lx, ly, "i"), "Index contour"),
-        (lx, ly + 22, _swatch(lx, ly + 22, "n"), f"Contour, interval 1/{N_LEVELS} of relief"),
-        (lx + 215, ly, _swatch(lx + 215, ly, "s"), "Supplementary contour"),
-        (lx + 215, ly + 22, _spot(lx + 221, ly + 22, "27"), "Spot height, busiest week"),
+        (lx, ly + 24, _swatch(lx, ly + 24, "n"), f"Contour, interval 1/{N_LEVELS} of relief"),
+        (lx + col, ly, _swatch(lx + col, ly, "s"), "Supplementary contour"),
+        (lx + col, ly + 24, _spot(lx + col + 6, ly + 24, "27"), "Spot height, busiest week"),
     ]
     for x, y, sample, text in rows:
         out.append(sample)
-        out.append(f'<text x="{_f(x + 38)}" y="{_f(y + 3.5)}" font-size="10">{text}</text>')
+        out.append(f'<text x="{_f(x + 40)}" y="{_f(y + 4)}" font-size="11.5">{text}</text>')
 
-    # Scale bar: 12 weeks in 4-week blocks, the first split in weeks.
+    # Scale bar: 12 weeks in alternating 4-week blocks.
     sx, sy = x0 + 760, top - 8
     segs = []
     for k in range(3):
@@ -232,16 +232,16 @@ def _marginalia(field: HeightField, activity: Activity, t: Theme) -> str:
     for k, label in enumerate(("0", "4", "8", "12 weeks")):
         anchor = "start" if k == 3 else "middle"
         x = sx + k * 4 * week_w - (3 if k == 3 else 0)
-        out.append(f'<text x="{_f(x)}" y="{sy + 19}" font-size="9" class="muted" text-anchor="{anchor}">{label}</text>')
+        out.append(f'<text x="{_f(x)}" y="{sy + 20}" font-size="10.5" class="muted" text-anchor="{anchor}">{label}</text>')
     out += segs
 
     # North arrow: half-filled head on a hairline, N above.
     nx, ny = x0 + field.width - 14, top - 18
-    out.append(f'<text x="{nx}" y="{ny}" font-size="11" font-weight="600" text-anchor="middle">N</text>')
+    out.append(f'<text x="{nx}" y="{ny}" font-size="12" font-weight="600" text-anchor="middle">N</text>')
     out.append(f'<path d="M{nx} {ny + 5}l-6 20 6-5z" fill="{t.ink}"/>')
     out.append(f'<path d="M{nx} {ny + 5}l6 20-6-5z" fill="none" stroke="{t.ink}" stroke-width=".8" stroke-linejoin="round"/>')
     out.append(f'<path d="M{nx} {ny + 20}v18" stroke="{t.ink}" stroke-width=".8"/>')
-    return "\n".join(o for o in out if o)
+    return "\n".join(out)
 
 
 # -- whole sheet -----------------------------------------------------------------

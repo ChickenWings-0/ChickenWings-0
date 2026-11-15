@@ -17,10 +17,10 @@ from .data import Activity
 from .field import HeightField, Summit
 
 # Type sizes in SVG user units, shared with render.py.
-NAME_SIZE = 15.0           # summit name, serif italic
-MONTH_SIZE = 8.5           # month under the name, sans caps, letter-spaced
+NAME_SIZE = 17.0           # summit name, serif italic
+MONTH_SIZE = 9.5           # month under the name, sans caps, letter-spaced
 MONTH_TRACKING = 0.14      # letter-spacing of the month line, em
-SPOT_SIZE = 10.5           # spot height number, sans
+SPOT_SIZE = 11.5           # spot height number, sans
 
 MAX_NAMED = 5
 MAX_UNNAMED = 2
