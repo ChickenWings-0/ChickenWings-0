@@ -1,0 +1,228 @@
+"""Turn weekly activity into a smooth 2D height field.
+
+Layout: X runs over the 52 weeks, Y is split into one horizontal "lane" per
+top repository (plus one lane for everything else). Every repo-week with
+commits adds an elongated Gaussian hill to its lane, so consecutive busy
+weeks merge into ridges and quiet weeks become valleys.
+
+Steps, each deterministic:
+
+1. lanes      pick the top repositories, merge the rest into one lane and
+              order the lanes from the centre outwards so the main range sits
+              in the middle of the sheet.
+2. hills      sum Gaussians weighted by log1p(commits) so one huge week
+              can't flatten every other hill.
+3. warp       resample through a smooth, seeded displacement so outlines
+              wander like real terrain rather than perfect ellipses.
+4. smooth     Gaussian blur to remove grid artefacts.
+5. base       add a very low seeded noise floor so empty months read as
+              gentle ground instead of a flat void.
+"""
+
+from __future__ import annotations
+
+import zlib
+from dataclasses import dataclass
+
+import numpy as np
+from scipy import ndimage
+from skimage.feature import peak_local_max
+
+from .data import N_WEEKS, Activity
+
+# Field resolution, in map units (1 unit == 1 SVG user unit of the map frame).
+MAP_WIDTH = 1120.0
+MAP_HEIGHT = 440.0
+CELL = 2.0
+
+MAX_LANES = 8              # top repositories + 1 merged lane
+HILL_SIGMA_WEEKS = 1.35    # along-time spread of one week's hill
+HILL_SIGMA_LANE = 0.42     # across-lane spread, as a fraction of lane spacing
+MEANDER = 0.28             # ridge wander across its lane, fraction of spacing
+WARP_AMPLITUDE = 20.0      # max displacement of the domain warp, map units
+MASSIF_SIGMA = 52.0        # blur radius of the broad massif layer, map units
+MASSIF_WEIGHT = 0.35       # share of the massif layer in the final relief
+RELIEF = 0.12              # +- strength of the mid-frequency flank relief
+DISPLAY_GAMMA = 0.72       # < 1 widens foothills and spaces out summit contours
+SMOOTH_SIGMA = 2.5         # final blur, in cells
+BASE_AMPLITUDE = 0.1     # noise floor height relative to the highest peak
+
+
+@dataclass
+class Lane:
+    key: str                 # stable identifier (owner/name or "other")
+    label: str | None        # name printed on the map; None = unnamed
+    weekly: np.ndarray       # commits (or contributions) per week
+    y: float = 0.0           # lane centre, map units from the top
+
+
+@dataclass
+class Summit:
+    x: float                 # map units
+    y: float
+    height: float            # normalised field height, 0..1
+    lane: Lane
+    week: int                # busiest week of the lane near the summit
+    count: int               # contributions in that week ("elevation")
+
+
+@dataclass
+class HeightField:
+    z: np.ndarray            # (ny, nx), normalised to 0..1
+    lanes: list[Lane]
+    lane_z: np.ndarray       # (lanes, ny, nx) each lane's share before normalising
+    width: float = MAP_WIDTH
+    height: float = MAP_HEIGHT
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return self.z.shape
+
+    def to_map(self, row: float, col: float) -> tuple[float, float]:
+        """Grid (row, col) to map (x, y). The grid spans the frame edge to edge."""
+        ny, nx = self.z.shape
+        return col * self.width / (nx - 1), row * self.height / (ny - 1)
+
+
+def week_x(week: float, width: float = MAP_WIDTH) -> float:
+    """Map x of the middle of `week`."""
+    return (week + 0.5) * width / N_WEEKS
+
+
+def _seed(*parts: str) -> int:
+    """Stable seed from strings (Python's hash() is salted per process)."""
+    return zlib.crc32("|".join(parts).encode("utf-8"))
+
+
+def _fbm(shape: tuple[int, int], seed: int, octaves=((6, 3, 1.0), (12, 5, 0.5), (24, 10, 0.25))) -> np.ndarray:
+    """Smooth fractal value noise in [0, 1]: coarse random grids, cubic-upsampled."""
+    rng = np.random.default_rng(seed)
+    ny, nx = shape
+    out = np.zeros(shape)
+    for gx, gy, weight in octaves:
+        grid = rng.random((gy + 3, gx + 3))
+        up = ndimage.zoom(grid, ((ny + 2 * ny / gy) / grid.shape[0], (nx + 2 * nx / gx) / grid.shape[1]), order=3)
+        oy, ox = (up.shape[0] - ny) // 2, (up.shape[1] - nx) // 2
+        out += weight * up[oy:oy + ny, ox:ox + nx]
+    out -= out.min()
+    return out / (out.max() or 1.0)
+
+
+# -- 1. lanes -----------------------------------------------------------------
+
+def build_lanes(activity: Activity, max_lanes: int = MAX_LANES) -> list[Lane]:
+    named = activity.repos[: max_lanes - 1]
+    rest = activity.repos[max_lanes - 1:]
+
+    lanes = [
+        Lane(key=r.full_name, label=None if r.private else r.name, weekly=np.array(r.weekly, float))
+        for r in named
+    ]
+    other = np.array(activity.other_weekly, float)
+    for r in rest:
+        other += np.array(r.weekly, float)
+    if other.sum() > 0:
+        lanes.append(Lane(key="other", label=None, weekly=other))
+
+    # Centre-out ordering: busiest lane in the middle, then alternate either
+    # side, so the sheet reads as one range with foothills to the edges.
+    lanes.sort(key=lambda lane: (-lane.weekly.sum(), lane.key))
+    n = len(lanes)
+    slots = sorted(range(n), key=lambda s: (abs(s - (n - 1) / 2), s))
+    ordered: list[Lane | None] = [None] * n
+    for lane, slot in zip(lanes, slots):
+        ordered[slot] = lane
+
+    spacing = MAP_HEIGHT / n
+    for i, lane in enumerate(ordered):
+        lane.y = (i + 0.5) * spacing
+    return ordered  # type: ignore[return-value]
+
+
+# -- 2-5. the field -------------------------------------------------------------
+
+def build_field(activity: Activity) -> HeightField:
+    lanes = build_lanes(activity)
+    nx = int(MAP_WIDTH / CELL) + 1
+    ny = int(MAP_HEIGHT / CELL) + 1
+    xs = np.linspace(0, MAP_WIDTH, nx)
+    ys = np.linspace(0, MAP_HEIGHT, ny)
+    spacing = MAP_HEIGHT / max(len(lanes), 1)
+    week_w = MAP_WIDTH / N_WEEKS
+    sx = HILL_SIGMA_WEEKS * week_w
+    sy = HILL_SIGMA_LANE * spacing
+
+    # 2. One Gaussian per repo-week. Separable, so build it as an outer
+    #    product of an x-profile and a y-profile. Centres get a small seeded
+    #    jitter so the lanes don't read as ruled lines.
+    lane_raw = np.zeros((len(lanes), ny, nx))
+    for li, lane in enumerate(lanes):
+        rng = np.random.default_rng(_seed(activity.login, lane.key))
+        jitter_x = rng.uniform(-0.3, 0.3, N_WEEKS) * week_w
+        # The ridge line meanders smoothly across its lane instead of
+        # running dead straight: a seeded random walk, low-pass filtered.
+        walk = ndimage.gaussian_filter1d(rng.normal(size=N_WEEKS), 3.0, mode="reflect")
+        jitter_y = walk / (np.abs(walk).max() or 1.0) * MEANDER * spacing
+        for w in np.nonzero(lane.weekly)[0]:
+            amp = np.log1p(lane.weekly[w])
+            gx = np.exp(-0.5 * ((xs - week_x(w) - jitter_x[w]) / sx) ** 2)
+            gy = np.exp(-0.5 * ((ys - lane.y - jitter_y[w]) / sy) ** 2)
+            lane_raw[li] += amp * np.outer(gy, gx)
+
+    # 3. Domain warp: sample every lane through the same displacement field.
+    warp_seed = _seed(activity.login, "warp")
+    dx = (_fbm((ny, nx), warp_seed) - 0.5) * 2 * WARP_AMPLITUDE / CELL
+    dy = (_fbm((ny, nx), warp_seed + 1) - 0.5) * 2 * WARP_AMPLITUDE / CELL
+    rows, cols = np.mgrid[0:ny, 0:nx].astype(float)
+    coords = np.array([rows + dy, cols + dx])
+    lane_z = np.stack([
+        ndimage.map_coordinates(layer, coords, order=1, mode="nearest") for layer in lane_raw
+    ]) if len(lanes) else np.zeros((0, ny, nx))
+
+    # 4. Smooth away grid artefacts and normalise to the highest summit.
+    act = lane_z.sum(axis=0) if len(lanes) else np.zeros((ny, nx))
+    act = ndimage.gaussian_filter(act, SMOOTH_SIGMA)
+    act = act / (act.max() or 1.0)
+
+    # Terrain has hierarchy: peaks sit on broad massifs joined by saddles.
+    # A heavily blurred copy of the field provides those shoulders, and a
+    # mid-frequency relief term roughens the flanks into spurs and gullies.
+    massif = ndimage.gaussian_filter(act, MASSIF_SIGMA / CELL)
+    massif = massif / (massif.max() or 1.0)
+    act = (1 - MASSIF_WEIGHT) * act + MASSIF_WEIGHT * massif
+    relief = _fbm((ny, nx), _seed(activity.login, "relief"), octaves=((16, 7, 1.0), (32, 13, 0.5)))
+    act = ndimage.gaussian_filter(act * (1 - RELIEF + 2 * RELIEF * relief), SMOOTH_SIGMA / 2)
+    act = act / (act.max() or 1.0)
+    # Lift the foothills: more contour lines on the lower slopes and less
+    # crowding near the summits, the way real mountains are shaped.
+    act = act ** DISPLAY_GAMMA
+
+    # 5. A gentle seeded floor, mostly long wavelengths.
+    base = _fbm((ny, nx), _seed(activity.login, "base"), octaves=((4, 2, 1.0), (9, 4, 0.45), (18, 8, 0.15)))
+    z = BASE_AMPLITUDE * base + (1 - BASE_AMPLITUDE) * act
+    z = (z - z.min()) / (z.max() - z.min())
+    return HeightField(z=z, lanes=lanes, lane_z=lane_z)
+
+
+# -- summits ----------------------------------------------------------------------
+
+def find_summits(field: HeightField, activity: Activity, limit: int = 12) -> list[Summit]:
+    """Local maxima of the field, highest first, attributed to a lane."""
+    ny, nx = field.shape
+    peaks = peak_local_max(field.z, min_distance=int(40 / CELL), threshold_abs=BASE_AMPLITUDE + 0.08,
+                           exclude_border=int(10 / CELL))
+    summits = []
+    for row, col in peaks:
+        li = int(np.argmax(field.lane_z[:, row, col]))
+        lane = field.lanes[li]
+        x, y = field.to_map(row, col)
+        # The busiest week of that lane within +-2 weeks of the summit.
+        centre = int(np.clip(x / (field.width / N_WEEKS), 0, N_WEEKS - 1))
+        lo, hi = max(0, centre - 2), min(N_WEEKS, centre + 3)
+        week = lo + int(np.argmax(lane.weekly[lo:hi]))
+        count = int(lane.weekly[week])
+        if count <= 0:
+            continue
+        summits.append(Summit(x=x, y=y, height=float(field.z[row, col]), lane=lane, week=week, count=count))
+    summits.sort(key=lambda s: -s.height)
+    return summits[:limit]
