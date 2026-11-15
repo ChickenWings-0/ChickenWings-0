@@ -59,7 +59,7 @@ def render_both(activity: Activity) -> dict[str, str]:
     """The whole pipeline: field -> contours -> labels -> one SVG per theme."""
     field = build_field(activity)
     levels = extract_contours(field)
-    labels = place_labels(field, find_summits(field, activity), activity)
+    labels = place_labels(field, find_summits(field), activity)
     return {theme.name: render_svg(field, levels, labels, activity, theme) for theme in (LIGHT, DARK)}
 
 

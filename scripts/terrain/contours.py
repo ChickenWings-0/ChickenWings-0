@@ -4,21 +4,22 @@ For every level:
 
 1. marching squares (skimage.measure.find_contours) gives sub-cell
    accurate polylines in grid coordinates;
-2. Douglas-Peucker simplification (skimage.measure.approximate_polygon)
+2. a light blur of the vertices along each line removes marching-squares
+   stair-steps;
+3. Douglas-Peucker simplification (skimage.measure.approximate_polygon)
    removes redundant vertices;
-3. specks (tiny rings, short edge fragments) are dropped because they read
-   as noise, not terrain (each line is first lightly smoothed along its
-   length to remove marching-squares stair-steps);
-4. the remaining vertices are joined by a smooth Hermite spline (tangents
+4. specks (tiny rings, short edge fragments) are dropped because they read
+   as noise, not terrain;
+5. the remaining vertices are joined by a smooth Hermite spline (tangents
    scaled by chord length) written as relative cubic Bezier commands with
    one decimal.
 
 Three kinds of line, as on a survey map:
 
 * index contours         every 5th level, drawn heavier
-* intermediate contours  every other level
-* supplementary contours half-interval lines, dashed, only on the low,
-                         flat ground where normal contours are far apart
+* intermediate contours  all remaining whole levels
+* supplementary contours half-interval lines, dashed, only on the lowest
+                         ground, where normal contours are far apart
 """
 
 from __future__ import annotations

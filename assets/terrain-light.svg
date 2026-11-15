@@ -6,6 +6,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Aria
 .serif{font-family:Georgia,"Iowan Old Style","Palatino Linotype","Book Antiqua","Times New Roman",serif;font-style:italic}
 .muted{fill:#776c5f}
 .caps{text-transform:uppercase;letter-spacing:.14em}
+.tri{fill:#2e2a24}
 .ko text,.ko path{fill:#000;stroke:#000;stroke-width:8px;stroke-linejoin:round}
 .c path{fill:none;stroke-linecap:round;stroke-linejoin:round}
 .n path{stroke:#a9774c;stroke-width:0.6px}
@@ -19,7 +20,6 @@ text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Aria
 .lb{animation:fade 1s ease 2.6s both}
 .k path,.k{animation:none}
 @media (prefers-reduced-motion:reduce){.n path,.i path,.s,.lb{animation:none}}
-.tri{fill:#2e2a24}
 </style>
 <defs><clipPath id="clip"><rect width="1120" height="440"/></clipPath>
 <mask id="ko" maskUnits="userSpaceOnUse" x="-10" y="-10" width="1140" height="460"><rect x="-10" y="-10" width="1140" height="460" fill="#fff"/><g class="ko">

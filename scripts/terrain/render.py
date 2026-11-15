@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
-from .contours import INDEX_EVERY, N_LEVELS, ContourLevel
+from .contours import N_LEVELS, ContourLevel
 from .data import N_WEEKS, Activity
 from .field import HeightField
 from .labels import MONTH_SIZE, MONTH_TRACKING, NAME_SIZE, SPOT_SIZE, PlacedLabel
@@ -74,6 +74,7 @@ text{{font-family:{SANS};fill:{t.ink}}}
 .serif{{font-family:{SERIF};font-style:italic}}
 .muted{{fill:{t.muted}}}
 .caps{{text-transform:uppercase;letter-spacing:.14em}}
+.tri{{fill:{t.ink}}}
 .ko text,.ko path{{fill:#000;stroke:#000;stroke-width:8px;stroke-linejoin:round}}
 .c path{{fill:none;stroke-linecap:round;stroke-linejoin:round}}
 .n path{{stroke:{t.contour};stroke-width:{t.contour_width}px}}
@@ -116,9 +117,9 @@ def _contours(levels: list[ContourLevel], t: Theme) -> str:
     return "\n".join(out)
 
 
-def _month_starts(activity: Activity) -> list[tuple[date, float]]:
+def _month_starts(activity: Activity, width: float) -> list[tuple[date, float]]:
     """(first-of-month, x) for every month boundary inside the window."""
-    week_w = 1120 / N_WEEKS
+    week_w = width / N_WEEKS
     day = date(activity.start.year, activity.start.month, 1)
     out = []
     while day <= activity.end:
@@ -131,7 +132,7 @@ def _month_starts(activity: Activity) -> list[tuple[date, float]]:
 def _grid_and_ticks(field: HeightField, activity: Activity) -> tuple[str, str]:
     """Faint graticule (inside the map) and month ticks/labels on the frame."""
     W, H = field.width, field.height
-    months = _month_starts(activity)
+    months = _month_starts(activity, W)
     grid = [f'<path class="g" d="{"".join(f"M{_f(x)} 0V{_f(H)}" for _, x in months)}'
             f'{"".join(f"M0 {_f(H * k / 4)}H{_f(W)}" for k in (1, 2, 3))}"/>']
 
@@ -266,7 +267,6 @@ def render_svg(field: HeightField, levels: list[ContourLevel], labels: list[Plac
 <desc id="desc">{escape(desc)}</desc>
 <style>
 {_style(t)}
-.tri{{fill:{t.ink}}}
 </style>
 <defs><clipPath id="clip"><rect width="{_f(W)}" height="{_f(H)}"/></clipPath>{glow}
 {_knockout(labels, W, H)}</defs>

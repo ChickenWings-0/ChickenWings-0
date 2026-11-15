@@ -2,7 +2,7 @@
 
 SVG has no text measurement without a browser, so widths are estimated
 from per-character tables with a safety margin. Placement is greedy:
-summits are handled highest first, each label tries a ranked list of
+named summits first, each group highest first; each label tries a ranked list of
 positions around its marker, and the first spot that stays inside the frame
 and clear of every other label and marker wins. A summit with no free spot
 is dropped entirely, so labels never overlap.

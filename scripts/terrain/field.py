@@ -14,7 +14,9 @@ Steps, each deterministic:
               can't flatten every other hill.
 3. warp       resample through a smooth, seeded displacement so outlines
               wander like real terrain rather than perfect ellipses.
-4. smooth     Gaussian blur to remove grid artefacts.
+4. relief     blur away grid artefacts, add a broad massif layer (peaks
+              joined by saddles) and a little flank texture, then lift the
+              foothills with a log curve.
 5. base       add a very low seeded noise floor so empty months read as
               gentle ground instead of a flat void.
 """
@@ -49,7 +51,7 @@ RELIEF = 0.12              # +- strength of the mid-frequency flank relief
 FOOTHILL_LIFT = 3.0        # > 0 widens foothills and spaces out summit contours
 SMOOTH_SIGMA = 2.5         # blur of the summed hills, in cells
 FINAL_SIGMA = 1.5          # last light blur of the finished field, in cells
-BASE_AMPLITUDE = 0.1     # noise floor height relative to the highest peak
+BASE_AMPLITUDE = 0.1       # noise floor height relative to the highest peak
 
 
 @dataclass
@@ -229,9 +231,8 @@ def build_field(activity: Activity) -> HeightField:
 
 # -- summits ----------------------------------------------------------------------
 
-def find_summits(field: HeightField, activity: Activity, limit: int = 12) -> list[Summit]:
+def find_summits(field: HeightField, limit: int = 12) -> list[Summit]:
     """Local maxima of the field, highest first, attributed to a lane."""
-    ny, nx = field.shape
     peaks = peak_local_max(field.z, min_distance=int(40 / CELL), threshold_abs=BASE_AMPLITUDE + 0.08,
                            exclude_border=3)
     summits = []
