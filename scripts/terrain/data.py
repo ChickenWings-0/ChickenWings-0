@@ -17,6 +17,7 @@ class Repo:
     full_name: str       # owner/name, used for stable ordering and hashing
     private: bool        # private repositories are never named on the map
     weekly: list[int]    # commits per week, len == N_WEEKS
+    description: str = ""  # GitHub repository description, used in the README key
 
     @property
     def total(self) -> int:

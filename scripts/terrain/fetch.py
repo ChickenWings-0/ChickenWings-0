@@ -11,7 +11,9 @@ Two kinds of query are combined:
   chunks. A chunk has at most 91 days, so ``first: 100`` always holds them.
 
 Whatever the calendar counts beyond the per-repo commits becomes the
-"other" lane of the map.
+"other" lane of the map. That includes commits to the profile repository
+itself (the one named after the user, or the one running the workflow):
+it would otherwise turn up as a summit on its own map.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
   user(login: $login) {
     contributionsCollection(from: $from, to: $to) {
       commitContributionsByRepository(maxRepositories: 100) {
-        repository { name nameWithOwner isPrivate }
+        repository { name nameWithOwner isPrivate description }
         contributions(first: 100) {
           pageInfo { hasNextPage }
           nodes { occurredAt commitCount }
@@ -105,6 +107,11 @@ def _graphql(session: requests.Session, query: str, variables: dict) -> dict:
     raise FetchError(f"giving up after {MAX_ATTEMPTS} attempts ({last_error})")
 
 
+def _is_profile_repo(login: str, info: dict) -> bool:
+    name, full = info["name"], info["nameWithOwner"]
+    return name.lower() == login.lower() or full.lower() == os.environ.get("GITHUB_REPOSITORY", "").lower()
+
+
 def _iso(day: date, end_of_day: bool = False) -> str:
     moment = datetime.combine(day, datetime.max.time() if end_of_day else datetime.min.time())
     return moment.replace(microsecond=0, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
@@ -141,12 +148,15 @@ def fetch_activity(login: str, token: str, today: date | None = None) -> Activit
         data = _graphql(session, REPOS_QUERY, {"login": login, "from": _iso(c_start), "to": _iso(c_end, True)})
         for entry in data["user"]["contributionsCollection"]["commitContributionsByRepository"]:
             info = entry["repository"]
+            if _is_profile_repo(login, info):
+                continue
             conn = entry["contributions"]
             if conn["pageInfo"]["hasNextPage"]:
                 raise FetchError(f"unexpected pagination for {info['nameWithOwner']}")
             repo = repos.setdefault(info["nameWithOwner"], Repo(
                 name=info["name"], full_name=info["nameWithOwner"],
                 private=bool(info["isPrivate"]), weekly=[0] * N_WEEKS,
+                description=(info.get("description") or "").strip(),
             ))
             for node in conn["nodes"]:
                 # occurredAt is midnight (US Pacific) of the contribution day
