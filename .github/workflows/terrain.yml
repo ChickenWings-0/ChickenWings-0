@@ -41,7 +41,7 @@ jobs:
 
       - name: Commit if the map changed
         run: |
-          git add assets/terrain-light.svg assets/terrain-dark.svg README.md
+          git add assets/terrain-light.svg assets/terrain-dark.svg
           if git diff --cached --quiet; then
             echo "Map unchanged, nothing to commit."
             exit 0
