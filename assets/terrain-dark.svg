@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 594" width="1200" height="594" role="img" aria-labelledby="title desc" color="#d6dedc">
-<title id="title">ChickenWings-0: GitHub activity as a topographic map</title>
-<desc id="desc">Contour map of 466 contributions over the 52 weeks to 2026-11-16. Time runs left to right, each ridge is a repository, height is contributions per week on a log scale. Numbered summits: 1 JOC (Apr 2026), 2 maitri (May 2026), 4 SatQuery-AI (Sep 2026), 6 OOPS-PBL (Nov 2026).</desc>
+<title id="title">Hi, I'm Aksh Rastogi</title>
+<desc id="desc">Hi, I'm Aksh Rastogi. I build applied AI products, end to end. Co-founder &amp; CTO at MAITRI, an adaptive AI wellness companion that reads mood, voice, posture and heart rate. Lead engineer on OASIS, a studio for AI video and music generation. Studying CS (AI &amp; ML) at Delhi Technical Campus, GGSIPU, New Delhi. PyTorch and llama.cpp for models, FastAPI and React to ship them. chickenwings.in Background: a contour map of the last 52 weeks of GitHub activity to 2026-11-16. Time runs left to right, each ridge is a repository, height is contributions per week on a log scale.</desc>
 <style>
 text{font-family:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono","Segoe UI Mono",Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;fill:#d6dedc}
 .muted{fill:#7c8a88}
 .caps{text-transform:uppercase;letter-spacing:.08em}
-.mk circle{fill:#0c0f13;stroke:#d6dedc;stroke-width:1px}
-.mk text{font-weight:600;text-anchor:middle}
+.ab text{paint-order:stroke;stroke:#0c0f13;stroke-width:5px;stroke-linejoin:round}
+.site{fill:#a6f2e3}
 .c path{fill:none;stroke-linecap:round;stroke-linejoin:round}
 .n path{stroke:#5fc4b4;stroke-width:0.6px}
 .i path{stroke:#a6f2e3;stroke-width:1.1px}
@@ -16,15 +16,14 @@ text{font-family:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono","Segoe UI
 @keyframes fade{from{opacity:0}}
 .n path,.i path{animation:draw 1.8s cubic-bezier(.45,0,.2,1) var(--d) both}
 .s{animation:fade 1.4s ease .2s both}
-.lb{animation:fade 1s ease 2.6s both}
 .k path,.k{animation:none}
-@media (prefers-reduced-motion:reduce){.n path,.i path,.s,.lb{animation:none}}
+@media (prefers-reduced-motion:reduce){.n path,.i path,.s{animation:none}}
 </style>
 <defs><clipPath id="clip"><rect width="1120" height="440"/></clipPath><filter id="glow" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-<mask id="ko" maskUnits="userSpaceOnUse" x="-10" y="-10" width="1140" height="460"><rect x="-10" y="-10" width="1140" height="460" fill="#fff"/><circle cx="414" cy="246" r="14.0"/><circle cx="502" cy="412" r="14.0"/><circle cx="772" cy="198" r="14.0"/><circle cx="902" cy="74" r="14.0"/><circle cx="1056" cy="190" r="14.0"/><circle cx="1076" cy="304" r="14.0"/></mask></defs>
+<linearGradient id="fg" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0.13"/><stop offset="0.51" stop-color="#fff" stop-opacity="0.13"/><stop offset="0.71" stop-color="#fff" stop-opacity="1"/></linearGradient><mask id="fade" maskUnits="userSpaceOnUse" x="0" y="0" width="1120" height="440"><rect width="1120" height="440" fill="url(#fg)"/></mask></defs>
 <rect width="1200" height="594" fill="#0c0f13"/>
 <g transform="translate(40 48)">
-<g clip-path="url(#clip)"><g mask="url(#ko)">
+<g clip-path="url(#clip)"><g mask="url(#fade)">
 <path class="g" d="M24.6 0V440M120 0V440M215.4 0V440M301.5 0V440M396.9 0V440M489.2 0V440M584.6 0V440M676.9 0V440M772.3 0V440M867.7 0V440M960 0V440M1055.4 0V440M0 110H1120M0 220H1120M0 330H1120"/>
 <g class="c" filter="url(#glow)">
 <g class="s">
@@ -187,7 +186,19 @@ text{font-family:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono","Segoe UI
 </g>
 </g>
 </g></g>
-<g class="lb"><g class="mk"><circle cx="414" cy="246" r="10.0"/><text x="414" y="250.2" font-size="12.0">1</text></g><g class="mk"><circle cx="502" cy="412" r="10.0"/><text x="502" y="416.2" font-size="12.0">2</text></g><g class="mk"><circle cx="772" cy="198" r="10.0"/><text x="772" y="202.2" font-size="12.0">3</text></g><g class="mk"><circle cx="902" cy="74" r="10.0"/><text x="902" y="78.2" font-size="12.0">4</text></g><g class="mk"><circle cx="1056" cy="190" r="10.0"/><text x="1056" y="194.2" font-size="12.0">5</text></g><g class="mk"><circle cx="1076" cy="304" r="10.0"/><text x="1076" y="308.2" font-size="12.0">6</text></g></g>
+<g class="ab">
+<text x="40" y="62" font-size="14" class="caps muted">Hi, I'm</text>
+<text x="38" y="112" font-size="48" font-weight="700">Aksh Rastogi</text>
+<text x="40" y="150" font-size="18" font-weight="600">I build applied AI products, end to end.</text>
+<text x="40" y="186" font-size="16.5">Co-founder &amp; CTO at MAITRI, an adaptive AI</text>
+<text x="40" y="211" font-size="16.5">wellness companion that reads mood, voice, posture</text>
+<text x="40" y="236" font-size="16.5">and heart rate. Lead engineer on OASIS, a studio</text>
+<text x="40" y="261" font-size="16.5">for AI video and music generation.</text>
+<text x="40" y="297" font-size="16.5">Studying CS (AI &amp; ML) at Delhi Technical Campus,</text>
+<text x="40" y="322" font-size="16.5">GGSIPU, New Delhi. PyTorch and llama.cpp for</text>
+<text x="40" y="347" font-size="16.5">models, FastAPI and React to ship them.</text>
+<text x="40" y="393" font-size="16.5" font-weight="700" class="site">chickenwings.in →</text>
+</g>
 <rect width="1120" height="440" fill="none" stroke="#d6dedc" stroke-width="1.1"/>
 <rect x="-5" y="-5" width="1130" height="450" fill="none" stroke="#d6dedc" stroke-width=".5"/>
 <path d="M24.6 0v5M24.6 440v-5M120 0v5M120 440v-5M215.4 0v5M215.4 440v-5M301.5 0v5M301.5 440v-5M396.9 0v5M396.9 440v-5M489.2 0v5M489.2 440v-5M584.6 0v5M584.6 440v-5M676.9 0v5M676.9 440v-5M772.3 0v5M772.3 440v-5M867.7 0v5M867.7 440v-5M960 0v5M960 440v-5M1055.4 0v5M1055.4 440v-5" stroke="currentColor" stroke-width=".8" fill="none"/>
@@ -217,8 +228,6 @@ text{font-family:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono","Segoe UI
 <text x="372" y="556" font-size="10.5">Contour, interval 1/30 of relief</text>
 <g class="c s k"><path d="M594 528h26"/></g>
 <text x="634" y="532" font-size="10.5">Supplementary contour</text>
-<g class="mk"><circle cx="607" cy="552" r="10.0"/><text x="607" y="556.2" font-size="12.0">1</text></g>
-<text x="634" y="556" font-size="10.5">Summit, see key</text>
 <text x="800" y="544.0" font-size="10.5" class="muted" text-anchor="middle">0</text>
 <text x="886.2" y="544.0" font-size="10.5" class="muted" text-anchor="middle">4</text>
 <text x="972.3" y="544.0" font-size="10.5" class="muted" text-anchor="middle">8</text>
