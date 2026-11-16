@@ -1,7 +1,7 @@
 """Render contours, summits and map furniture as a self-contained SVG.
 
-No external fonts, images or scripts: system font stacks only, and a single
-optional CSS animation (contours draw in once, labels fade in after), which
+No external fonts, images or scripts: one system monospace stack, and a single
+optional CSS animation (contours draw in once, markers fade in after), which
 is switched off for prefers-reduced-motion. Without CSS animation support
 the SVG shows its final state.
 """
@@ -15,7 +15,7 @@ from xml.sax.saxutils import escape
 from .contours import N_LEVELS, ContourLevel
 from .data import N_WEEKS, Activity
 from .field import HeightField
-from .labels import MONTH_SIZE, MONTH_TRACKING, NAME_SIZE, SPOT_SIZE, PlacedLabel
+from .labels import KNOCKOUT_R, MARKER_R, MARKER_SIZE, PlacedLabel
 
 # Sheet geometry, SVG user units.
 SHEET_W, SHEET_H = 1200, 594
@@ -26,8 +26,10 @@ FRAME_X, FRAME_Y = 40, 48           # top-left corner of the map neatline
 LON_W, LON_E = (8, 30), (8, 52)
 LAT_N, LAT_S = (47, 12), (47, 6)
 
-SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif'
-SERIF = 'Georgia,"Iowan Old Style","Palatino Linotype","Book Antiqua","Times New Roman",serif'
+# Monospace throughout, like a plotter-drawn survey sheet. Every platform
+# has one, and fixed advance widths keep the marginalia layout predictable.
+MONO = ('ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono","Segoe UI Mono",'
+        'Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace')
 
 
 @dataclass(frozen=True)
@@ -70,12 +72,11 @@ def _dms(deg_min: tuple[int, int], hemi: str) -> str:
 
 def _style(t: Theme) -> str:
     return f"""
-text{{font-family:{SANS};fill:{t.ink}}}
-.serif{{font-family:{SERIF};font-style:italic}}
+text{{font-family:{MONO};fill:{t.ink}}}
 .muted{{fill:{t.muted}}}
-.caps{{text-transform:uppercase;letter-spacing:.14em}}
-.tri{{fill:{t.ink}}}
-.ko text,.ko path{{fill:#000;stroke:#000;stroke-width:8px;stroke-linejoin:round}}
+.caps{{text-transform:uppercase;letter-spacing:.08em}}
+.mk circle{{fill:{t.paper};stroke:{t.ink};stroke-width:1px}}
+.mk text{{font-weight:600;text-anchor:middle}}
 .c path{{fill:none;stroke-linecap:round;stroke-linejoin:round}}
 .n path{{stroke:{t.contour};stroke-width:{t.contour_width}px}}
 .i path{{stroke:{t.index};stroke-width:{t.index_width}px}}
@@ -92,13 +93,12 @@ text{{font-family:{SANS};fill:{t.ink}}}
 
 
 def _knockout(labels: list[PlacedLabel], width: float, height: float) -> str:
-    """Mask that blanks contours and grid around every label and marker,
-    the way printed maps knock lines out behind lettering. The mask holds
-    the lettering itself with a thick stroke, so the clearing follows the
-    glyphs in whatever font the viewer's system picks."""
+    """Mask that clears contours and grid in a small disc around every
+    marker, the way printed maps knock lines out behind their symbols."""
+    discs = "".join(f'<circle cx="{_f(lb.x)}" cy="{_f(lb.y)}" r="{KNOCKOUT_R}"/>' for lb in labels)
     return (f'<mask id="ko" maskUnits="userSpaceOnUse" x="-10" y="-10" width="{_f(width + 20)}" height="{_f(height + 20)}">'
             f'<rect x="-10" y="-10" width="{_f(width + 20)}" height="{_f(height + 20)}" fill="#fff"/>'
-            f'{_summits(labels, knockout=True)}</mask>')
+            f'{discs}</mask>')
 
 
 def _contours(levels: list[ContourLevel], t: Theme) -> str:
@@ -154,12 +154,10 @@ def _grid_and_ticks(field: HeightField, activity: Activity) -> tuple[str, str]:
     return "\n".join(grid), tick_path + "\n" + "\n".join(labels)
 
 
-def _spot(x: float, y: float, number: str, knockout: bool = False, left: bool = False) -> str:
-    """Spot height: small triangle on the point, number beside it."""
-    tri = "" if knockout else ' class="tri"'
-    text_x, anchor = (x - 7, ' text-anchor="end"') if left else (x + 7, "")
-    return (f'<path d="M{_f(x)} {_f(y - 4.5)}l4 7h-8z"{tri}/>'
-            f'<text x="{_f(text_x)}" y="{_f(y + 3.2)}" font-size="{SPOT_SIZE}"{anchor}>{number}</text>')
+def _marker(x: float, y: float, ref: int) -> str:
+    """Numbered summit marker: a small ring with the key number inside."""
+    return (f'<g class="mk"><circle cx="{_f(x)}" cy="{_f(y)}" r="{MARKER_R}"/>'
+            f'<text x="{_f(x)}" y="{_f(y + MARKER_SIZE * 0.35)}" font-size="{MARKER_SIZE}">{ref}</text></g>')
 
 
 def _swatch(x: float, y: float, cls: str) -> str:
@@ -167,21 +165,8 @@ def _swatch(x: float, y: float, cls: str) -> str:
     return f'<g class="c {cls} k"><path d="M{_f(x)} {_f(y)}h26"/></g>'
 
 
-def _summits(labels: list[PlacedLabel], knockout: bool = False) -> str:
-    """Spot heights and summit names; with knockout=True, the same shapes
-    as mask content (see _knockout)."""
-    out = ['<g class="ko">' if knockout else '<g class="lb">']
-    for lb in labels:
-        s = lb.summit
-        out.append("<g>" + _spot(s.x, s.y, lb.number, knockout, lb.number_left))
-        if lb.name:
-            out.append(f'<text x="{_f(lb.text_x)}" y="{_f(lb.name_y)}" font-size="{NAME_SIZE}" '
-                       f'text-anchor="{lb.anchor}" class="serif">{escape(lb.name)}</text>')
-            out.append(f'<text x="{_f(lb.text_x)}" y="{_f(lb.month_y)}" font-size="{MONTH_SIZE}" '
-                       f'letter-spacing="{MONTH_TRACKING}em" text-anchor="{lb.anchor}" class="muted">{lb.month}</text>')
-        out.append("</g>")
-    out.append("</g>")
-    return "\n".join(out)
+def _markers(labels: list[PlacedLabel]) -> str:
+    return '<g class="lb">' + "".join(_marker(lb.x, lb.y, lb.ref) for lb in labels) + "</g>"
 
 
 def _coordinates(field: HeightField) -> str:
@@ -207,21 +192,21 @@ def _marginalia(field: HeightField, activity: Activity, t: Theme) -> str:
 
     # Title block.
     out.append(f'<text x="{x0}" y="{top}" font-size="15" font-weight="600" class="caps">{escape(activity.login)}</text>')
-    out.append(f'<text x="{x0}" y="{top + 20}" font-size="11.5" class="muted">Activity survey, 52 weeks to '
+    out.append(f'<text x="{x0}" y="{top + 20}" font-size="10.5" class="muted">Activity survey, 52 weeks to '
                f'{activity.end.day} {activity.end.strftime("%b %Y")}</text>')
-    out.append(f'<text x="{x0}" y="{top + 37}" font-size="11.5" class="muted">Relief: contributions per week, log scale</text>')
+    out.append(f'<text x="{x0}" y="{top + 37}" font-size="10.5" class="muted">Relief: contributions per week, log scale</text>')
 
     # Legend, two columns: line samples and the spot-height symbol.
-    lx, ly, col = x0 + 285, top - 4, 245
+    lx, ly, col = x0 + 292, top - 4, 262
     rows = [
         (lx, ly, _swatch(lx, ly, "i"), "Index contour"),
         (lx, ly + 24, _swatch(lx, ly + 24, "n"), f"Contour, interval 1/{N_LEVELS} of relief"),
         (lx + col, ly, _swatch(lx + col, ly, "s"), "Supplementary contour"),
-        (lx + col, ly + 24, _spot(lx + col + 6, ly + 24, "27"), "Spot height, busiest week"),
+        (lx + col, ly + 24, _marker(lx + col + 13, ly + 24, 1), "Summit, see key"),
     ]
     for x, y, sample, text in rows:
         out.append(sample)
-        out.append(f'<text x="{_f(x + 40)}" y="{_f(y + 4)}" font-size="11.5">{text}</text>')
+        out.append(f'<text x="{_f(x + 40)}" y="{_f(y + 4)}" font-size="10.5">{text}</text>')
 
     # Scale bar: 12 weeks in alternating 4-week blocks.
     sx, sy = x0 + 760, top - 8
@@ -252,11 +237,11 @@ def render_svg(field: HeightField, levels: list[ContourLevel], labels: list[Plac
     t = theme
     W, H = field.width, field.height
     grid, ticks = _grid_and_ticks(field, activity)
-    named = ", ".join(f"{lb.name} ({lb.month.title()}, {lb.number})" for lb in labels if lb.name)
+    named = ", ".join(f"{lb.ref} {lb.name} ({lb.month})" for lb in labels if lb.name)
     title = f"{activity.login}: GitHub activity as a topographic map"
     desc = (f"Contour map of {activity.total} contributions over the 52 weeks to {activity.end.isoformat()}. "
             f"Time runs left to right, each ridge is a repository, height is contributions per week on a log scale."
-            + (f" Highest summits: {named}." if named else ""))
+            + (f" Numbered summits: {named}." if named else ""))
 
     glow = ('<filter id="glow" x="-5%" y="-5%" width="110%" height="110%">'
             '<feGaussianBlur stdDeviation="1.8" result="b"/>'
@@ -276,7 +261,7 @@ def render_svg(field: HeightField, levels: list[ContourLevel], labels: list[Plac
 {grid}
 {_contours(levels, t)}
 </g></g>
-{_summits(labels)}
+{_markers(labels)}
 <rect width="{_f(W)}" height="{_f(H)}" fill="none" stroke="{t.ink}" stroke-width="1.1"/>
 <rect x="-5" y="-5" width="{_f(W + 10)}" height="{_f(H + 10)}" fill="none" stroke="{t.ink}" stroke-width=".5"/>
 {ticks}

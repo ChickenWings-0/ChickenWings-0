@@ -5,6 +5,7 @@ Pipeline (one module per stage):
     fetch     -> weekly commit counts per repository (GitHub GraphQL or mock)
     field     -> 2D height field: X = weeks, Y = one lane per repository
     contours  -> iso-lines extracted from the field, simplified and smoothed
-    labels    -> summits chosen and labelled without collisions
+    labels    -> summits chosen and numbered, markers never overlapping
     render    -> self-contained SVG in a light and a dark theme
+    readme    -> the numbered key table in README.md
 """

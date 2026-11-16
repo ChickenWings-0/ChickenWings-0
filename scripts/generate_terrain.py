@@ -5,7 +5,8 @@ Usage:
     python scripts/generate_terrain.py            # real data -> assets/terrain-{light,dark}.svg
     python scripts/generate_terrain.py --mock     # fake data -> build/mock/, no token needed
 
-Real runs need GH_TOKEN or GITHUB_TOKEN. If fetching fails, the existing
+Real runs also refresh the summit key in README.md (between the
+terrain-key comments). They need GH_TOKEN or GITHUB_TOKEN. If fetching fails, the existing
 SVGs are left untouched and the script exits 0 with a warning, so the
 scheduled workflow simply finds nothing to commit.
 """
@@ -23,8 +24,9 @@ from terrain.contours import extract_contours
 from terrain.data import Activity
 from terrain.fetch import FetchError, fetch_activity, token_from_env
 from terrain.field import build_field, find_summits
-from terrain.labels import place_labels
+from terrain.labels import PlacedLabel, place_labels
 from terrain.mock import mock_activity
+from terrain.readme import key_markdown, update_readme
 from terrain.render import DARK, LIGHT, render_svg
 
 DEFAULT_USER = "ChickenWings-0"
@@ -55,12 +57,13 @@ def load_activity(args: argparse.Namespace) -> Activity:
     return fetch_activity(args.user, token)
 
 
-def render_both(activity: Activity) -> dict[str, str]:
+def render_both(activity: Activity) -> tuple[dict[str, str], list[PlacedLabel]]:
     """The whole pipeline: field -> contours -> labels -> one SVG per theme."""
     field = build_field(activity)
     levels = extract_contours(field)
     labels = place_labels(field, find_summits(field), activity)
-    return {theme.name: render_svg(field, levels, labels, activity, theme) for theme in (LIGHT, DARK)}
+    svgs = {theme.name: render_svg(field, levels, labels, activity, theme) for theme in (LIGHT, DARK)}
+    return svgs, labels
 
 
 def validate(svg: str, name: str) -> None:
@@ -101,7 +104,7 @@ def main(argv: list[str]) -> int:
         Path(args.dump_data).write_text(activity.to_json(), encoding="utf-8")
 
     out_dir = args.out_dir or (ROOT / "build" / "mock" if args.mock else ROOT / "assets")
-    svgs = render_both(activity)
+    svgs, labels = render_both(activity)
     # Validate both before replacing either, so the pair never goes out of sync.
     for name, svg in svgs.items():
         validate(svg, name)
@@ -109,6 +112,18 @@ def main(argv: list[str]) -> int:
         path = out_dir / f"terrain-{name}.svg"
         write_atomic(path, svg)
         print(f"wrote {path} ({len(svg.encode('utf-8')) / 1024:.0f} KB)")
+
+    # The key only belongs in the real README; other runs get a key.md beside the SVGs.
+    readme = ROOT / "README.md"
+    if out_dir.resolve() == (ROOT / "assets").resolve():
+        text = update_readme(readme, labels)
+        if text is None:
+            warn("README.md has no terrain-key markers; key not updated")
+        else:
+            write_atomic(readme, text)
+            print(f"updated the key in {readme}")
+    else:
+        write_atomic(out_dir / "key.md", key_markdown(labels) + "\n")
 
     print(f"{activity.login}: {activity.total} contributions across {len(activity.repos)} repositories, "
           f"{activity.start} to {activity.end}")

@@ -1,60 +1,30 @@
-"""Choose which summits to label and place labels without collisions.
+"""Choose which summits to mark and number them for the README key.
 
-SVG has no text measurement without a browser, so widths are estimated
-from per-character tables with a safety margin. Placement is greedy:
-named summits first, each group highest first; each label tries a ranked list of
-positions around its marker, and the first spot that stays inside the frame
-and clear of every other label and marker wins. A summit with no free spot
-is dropped entirely, so labels never overlap.
+The map itself carries no project names. Each chosen summit gets a small
+numbered marker; the README lists what each number is (see readme.py).
+Markers are placed greedily, highest summit first. A summit near the frame
+gets its marker nudged inwards a little; one that would still leave the
+frame or touch another marker is dropped, so markers never overlap.
+Numbers then run west to east, so the key reads in time order.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from .data import Activity
 from .field import HeightField, Summit
 
-# Type sizes in SVG user units, shared with render.py.
-NAME_SIZE = 17.0           # summit name, serif italic
-MONTH_SIZE = 9.5           # month under the name, sans caps, letter-spaced
-MONTH_TRACKING = 0.14      # letter-spacing of the month line, em
-SPOT_SIZE = 11.5           # spot height number, sans
+MARKER_R = 10.0            # radius of the numbered summit marker
+MARKER_SIZE = 12.0         # font size of the number inside it
+KNOCKOUT_R = 14.0          # contours are cleared this far around a marker
 
-MAX_NAMED = 5
-MAX_UNNAMED = 2
-UNNAMED_MIN_HEIGHT = 0.5   # unnamed spot heights only on prominent summits
-FRAME_INSET = 7.0          # keep labels this far inside the neatline
-MARKER_INSET = 3.0         # spot heights may sit a little closer to it
-PAD = 4.0                  # minimum gap between any two boxes
-NAME_MAX_CHARS = 20
-
-# Approximate advance widths in em, generous for Georgia / DejaVu Serif and
-# Segoe UI / Helvetica / DejaVu Sans, the fonts the stacks resolve to.
-_SERIF_ITALIC = {"lower": 0.52, "upper": 0.70, "digit": 0.60, "narrow": 0.30, "dash": 0.40, "space": 0.27}
-_SANS = {"lower": 0.55, "upper": 0.70, "digit": 0.60, "narrow": 0.30, "dash": 0.40, "space": 0.30}
-_SAFETY = 1.08
-
-
-def text_width(text: str, size: float, serif: bool = False, tracking: float = 0.0) -> float:
-    table = _SERIF_ITALIC if serif else _SANS
-    total = 0.0
-    for ch in text:
-        if ch in "ijlrtfI.,:;'!|":
-            key = "narrow"
-        elif ch in "-_":
-            key = "dash"
-        elif ch == " ":
-            key = "space"
-        elif ch.isdigit():
-            key = "digit"
-        elif ch.isupper() or ch in "mwMW":
-            key = "upper"
-        else:
-            key = "lower"
-        total += table[key] + tracking
-    return total * size * _SAFETY
+MAX_NAMED = 5              # summits of distinct public repositories
+MAX_UNNAMED = 2            # summits of private / merged work
+UNNAMED_MIN_HEIGHT = 0.5   # unnamed markers only on prominent summits
+MIN_SPACING = 40.0         # minimum distance between two markers
+FRAME_INSET = 4.0          # keep markers this far inside the neatline
+MAX_NUDGE = 10.0           # a marker may sit this far off its summit to stay inside
 
 
 @dataclass
@@ -64,10 +34,6 @@ class Box:
     x1: float
     y1: float
 
-    def overlaps(self, other: "Box", pad: float = PAD) -> bool:
-        return not (self.x1 + pad <= other.x0 or other.x1 + pad <= self.x0 or
-                    self.y1 + pad <= other.y0 or other.y1 + pad <= self.y0)
-
     def inside(self, width: float, height: float, inset: float = FRAME_INSET) -> bool:
         return self.x0 >= inset and self.y0 >= inset and self.x1 <= width - inset and self.y1 <= height - inset
 
@@ -75,74 +41,23 @@ class Box:
 @dataclass
 class PlacedLabel:
     summit: Summit
-    number: str                    # spot height text
-    marker_box: Box                # triangle + number
-    number_left: bool = False      # number set left of the triangle (near the east edge)
-    name: str | None = None        # repo name, None for unnamed summits
-    month: str | None = None       # e.g. "APR 2026"
-    anchor: str = "start"          # text-anchor of the name block
-    text_x: float = 0.0            # anchor x of name and month lines
-    name_y: float = 0.0            # baseline of the name
-    month_y: float = 0.0           # baseline of the month line
-    label_box: Box | None = None
+    x: float = 0.0                 # marker centre, normally the summit itself
+    y: float = 0.0
+    ref: int = 0                   # number on the map and in the key, 1-based
+    name: str | None = None        # repository name, None for private / merged work
+    url: str | None = None         # link for the key (public repositories only)
+    description: str = ""
+    month: str = ""                # e.g. "Apr 2026", the busiest week near the summit
+    count: int = 0                 # contributions in that week
 
-
-def display_name(name: str) -> str:
-    """Shorten long repository names at a word break: "Circuit-Debugger-
-    Find-the-Fault" becomes "Circuit-Debugger"."""
-    if len(name) <= NAME_MAX_CHARS:
-        return name
-    words = re.split(r"(?<=[-_ .])", name)
-    short = ""
-    for word in words:
-        if len(short + word) > NAME_MAX_CHARS:
-            break
-        short += word
-    short = short.rstrip("-_ .")
-    return short if len(short) >= 4 else name[: NAME_MAX_CHARS - 1] + "…"
-
-
-def _marker_box(s: Summit, number: str, left: bool = False) -> Box:
-    # Triangle centred on the summit, number beside it (see render.py).
-    w = text_width(number, SPOT_SIZE)
-    if left:
-        return Box(s.x - 7 - w, s.y - 6.5, s.x + 5, s.y + 4.5)
-    return Box(s.x - 5, s.y - 6.5, s.x + 7 + w, s.y + 4.5)
-
-
-def _fit_marker(s: Summit, width: float, height: float) -> PlacedLabel | None:
-    """Spot height with its number on the right, or on the left when the
-    summit is close to the east edge; None if neither fits in the frame."""
-    number = str(s.count)
-    for left in (False, True):
-        box = _marker_box(s, number, left)
-        if box.inside(width, height, inset=MARKER_INSET):
-            return PlacedLabel(summit=s, number=number, marker_box=box, number_left=left)
-    return None
-
-
-def _candidates(s: Summit, marker: Box, w: float, h: float):
-    """Yield (anchor, text_x, top) for the name block, best positions first."""
-    cy = s.y - h / 2                       # block vertically centred on summit
-    for gap in (6.0, 16.0, 28.0):
-        yield "start", marker.x1 + gap, cy                       # right
-        yield "middle", s.x, marker.y0 - gap - h                 # above
-        yield "end", marker.x0 - gap, cy                         # left
-        yield "middle", s.x, marker.y1 + gap                     # below
-        yield "start", s.x + 2 + gap, marker.y0 - gap - h        # upper right
-        yield "end", s.x - 2 - gap, marker.y0 - gap - h          # upper left
-        yield "start", s.x + 2 + gap, marker.y1 + gap            # lower right
-        yield "end", s.x - 2 - gap, marker.y1 + gap              # lower left
-
-
-def _block_box(anchor: str, text_x: float, top: float, w: float, h: float) -> Box:
-    x0 = {"start": text_x, "middle": text_x - w / 2, "end": text_x - w}[anchor]
-    return Box(x0, top, x0 + w, top + h)
+    @property
+    def box(self) -> Box:
+        return Box(self.x - MARKER_R, self.y - MARKER_R, self.x + MARKER_R, self.y + MARKER_R)
 
 
 def choose_summits(summits: list[Summit]) -> tuple[list[Summit], list[Summit]]:
     """Highest summit of up to MAX_NAMED distinct named repos, plus a few
-    prominent unnamed spot heights (private repos, the merged lane)."""
+    prominent unnamed ones (private repos, the merged lane)."""
     named: list[Summit] = []
     seen: set[str] = set()
     for s in summits:
@@ -163,40 +78,29 @@ def choose_summits(summits: list[Summit]) -> tuple[list[Summit], list[Summit]]:
 
 def place_labels(field: HeightField, summits: list[Summit], activity: Activity) -> list[PlacedLabel]:
     named, unnamed = choose_summits(summits)
-    # Markers must sit fully inside the frame; drop any that can't.
-    labels = [lb for s in named + unnamed if (lb := _fit_marker(s, field.width, field.height))]
+    repos = {r.full_name: r for r in activity.repos}
 
     placed: list[PlacedLabel] = []
-    for lb in labels:
-        others = [o.marker_box for o in labels if o is not lb] + [o.label_box for o in placed if o.label_box]
-        if any(lb.marker_box.overlaps(b) for b in others):
+    for s in named + unnamed:
+        lo = FRAME_INSET + MARKER_R
+        x = min(max(s.x, lo), field.width - lo)
+        y = min(max(s.y, lo), field.height - lo)
+        if abs(x - s.x) > MAX_NUDGE or abs(y - s.y) > MAX_NUDGE:
             continue
-        if lb.summit.lane.label and lb.summit in named:
-            name = display_name(lb.summit.lane.label)
-            month = activity.week_start(lb.summit.week).strftime("%b %Y").upper()
-            w = max(text_width(name, NAME_SIZE, serif=True), text_width(month, MONTH_SIZE, tracking=MONTH_TRACKING))
-            # Name cap height ~0.72em above its baseline, descenders ~0.24em,
-            # then the month line beneath.
-            h = NAME_SIZE * 0.96 + 3.0 + MONTH_SIZE * 0.95
-            for anchor, text_x, top in _candidates(lb.summit, lb.marker_box, w, h):
-                box = _block_box(anchor, text_x, top, w, h)
-                if not box.inside(field.width, field.height):
-                    continue
-                if box.overlaps(lb.marker_box) or any(box.overlaps(b) for b in others):
-                    continue
-                lb.name, lb.month, lb.anchor, lb.text_x = name, month, anchor, text_x
-                lb.name_y = top + NAME_SIZE * 0.74
-                lb.month_y = top + h - MONTH_SIZE * 0.2
-                lb.label_box = box
-                break
-            else:
-                continue          # nowhere to put it: drop the summit entirely
+        lb = PlacedLabel(summit=s, x=x, y=y)
+        if any((x - o.x) ** 2 + (y - o.y) ** 2 < MIN_SPACING ** 2 for o in placed):
+            continue
+        if s in named:
+            repo = repos.get(s.lane.key)
+            lb.name = s.lane.label
+            if repo and not repo.private:
+                lb.url = f"https://github.com/{repo.full_name}"
+                lb.description = repo.description
+        lb.month = activity.week_start(s.week).strftime("%b %Y")
+        lb.count = s.count
         placed.append(lb)
 
-    # Unplaced markers were still treated as obstacles above, which is only
-    # conservative. Final guard: nothing that survived may overlap.
-    boxes = [b for lb in placed for b in (lb.marker_box, lb.label_box) if b]
-    for i, a in enumerate(boxes):
-        for b in boxes[i + 1:]:
-            assert not a.overlaps(b, pad=0), "label placement produced an overlap"
+    placed.sort(key=lambda lb: (lb.x, lb.y))
+    for i, lb in enumerate(placed, start=1):
+        lb.ref = i
     return placed
