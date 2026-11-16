@@ -28,7 +28,6 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy import ndimage
-from skimage.feature import peak_local_max
 
 from .data import N_WEEKS, Activity
 
@@ -57,19 +56,9 @@ BASE_AMPLITUDE = 0.1       # noise floor height relative to the highest peak
 @dataclass
 class Lane:
     key: str                 # stable identifier (owner/name or "other")
-    label: str | None        # name printed on the map; None = unnamed
+    label: str | None        # repository name; None for private or merged work
     weekly: np.ndarray       # commits (or contributions) per week
     y: float = 0.0           # lane centre, map units from the top
-
-
-@dataclass
-class Summit:
-    x: float                 # map units
-    y: float
-    height: float            # normalised field height, 0..1
-    lane: Lane
-    week: int                # busiest week of the lane near the summit
-    count: int               # contributions in that week ("elevation")
 
 
 @dataclass
@@ -83,11 +72,6 @@ class HeightField:
     @property
     def shape(self) -> tuple[int, int]:
         return self.z.shape
-
-    def to_map(self, row: float, col: float) -> tuple[float, float]:
-        """Grid (row, col) to map (x, y). The grid spans the frame edge to edge."""
-        ny, nx = self.z.shape
-        return col * self.width / (nx - 1), row * self.height / (ny - 1)
 
 
 def week_x(week: float, width: float = MAP_WIDTH) -> float:
@@ -227,26 +211,3 @@ def build_field(activity: Activity) -> HeightField:
     z = ndimage.gaussian_filter(z, FINAL_SIGMA)
     z = (z - z.min()) / (z.max() - z.min())
     return HeightField(z=z, lanes=lanes, lane_z=lane_z)
-
-
-# -- summits ----------------------------------------------------------------------
-
-def find_summits(field: HeightField, limit: int = 12) -> list[Summit]:
-    """Local maxima of the field, highest first, attributed to a lane."""
-    peaks = peak_local_max(field.z, min_distance=int(40 / CELL), threshold_abs=BASE_AMPLITUDE + 0.08,
-                           exclude_border=3)
-    summits = []
-    for row, col in peaks:
-        li = int(np.argmax(field.lane_z[:, row, col]))
-        lane = field.lanes[li]
-        x, y = field.to_map(row, col)
-        # The busiest week of that lane within +-2 weeks of the summit.
-        centre = int(np.clip(x / (field.width / N_WEEKS), 0, N_WEEKS - 1))
-        lo, hi = max(0, centre - 2), min(N_WEEKS, centre + 3)
-        week = lo + int(np.argmax(lane.weekly[lo:hi]))
-        count = int(lane.weekly[week])
-        if count <= 0:
-            continue
-        summits.append(Summit(x=x, y=y, height=float(field.z[row, col]), lane=lane, week=week, count=count))
-    summits.sort(key=lambda s: -s.height)
-    return summits[:limit]

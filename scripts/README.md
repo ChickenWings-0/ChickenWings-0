@@ -2,19 +2,19 @@
 
 `generate_terrain.py` turns the last 52 weeks of GitHub activity into a
 topographic contour map and writes `assets/terrain-light.svg` and
-`assets/terrain-dark.svg`, which the profile README embeds, and refreshes the
-summit key in the README (the table between the `terrain-key` comments).
+`assets/terrain-dark.svg`, which the profile README embeds as the header
+image. The intro text in that image ("Hi, I'm ...") comes from
+[`profile.toml`](../profile.toml): edit it there, not in the SVGs.
 
 ## How the map is built
 
 | Stage | Module | What it does |
 | --- | --- | --- |
-| fetch | `terrain/fetch.py` | GraphQL `contributionCalendar` (weekly totals) and `commitContributionsByRepository` (commits per repo per day, queried in 13-week chunks). Calendar contributions not explained by repo commits (PRs, issues, reviews, restricted private work) go into an "other" lane, as do commits to the profile repository itself. Repository descriptions are fetched for the key. |
+| fetch | `terrain/fetch.py` | GraphQL `contributionCalendar` (weekly totals) and `commitContributionsByRepository` (commits per repo per day, queried in 13-week chunks). Calendar contributions not explained by repo commits (PRs, issues, reviews, restricted private work) go into an "other" lane, as do commits to the profile repository itself. |
 | field | `terrain/field.py` | One lane per top-7 repository plus one merged lane, ordered from the centre outwards. Each repo-week adds a Gaussian hill weighted by `log1p(commits)`. A seeded domain warp, a broad massif layer and a low seeded noise floor make it read as terrain. All randomness is seeded from the login, so identical data gives an identical map. |
 | contours | `terrain/contours.py` | Marching squares (`skimage.measure.find_contours`) per level, vertex smoothing, Douglas-Peucker simplification and a chord-length Hermite spline written as compact relative cubic Beziers. Every 5th line is an index contour; dashed half-interval lines fill the flat ground. |
-| labels | `terrain/labels.py` | Picks the highest summit of up to five named repositories plus up to two prominent unnamed ones, drops any marker that would touch another or the frame, and numbers them west to east. Private repositories are never named. |
-| render | `terrain/render.py` | Self-contained SVG: one system monospace stack, numbered summit markers with the contours knocked out around them, a month graticule, a legend, a scale bar, a north arrow and corner coordinates. Contours draw in once with CSS (disabled for `prefers-reduced-motion`). |
-| key | `terrain/readme.py` | Writes the key table (number, repository with link and description, busiest week) between the `terrain-key` comments in the README. GitHub shows README images as plain images with no hover, so names live in the key rather than on the map. Other output directories get a `key.md` next to the SVGs instead. |
+| about | `terrain/about.py` | Reads `profile.toml` and wraps the paragraphs. GitHub can't put a background behind README text, so the intro is drawn into the SVG over the western part of the map, where the contours fade out. The lettering is monospace, so wrapping by character count is exact. Text that would run off the map stops the run with an error. |
+| render | `terrain/render.py` | Self-contained SVG: one system monospace stack, the intro text, a month graticule, a legend, a scale bar, a north arrow and corner coordinates. Contours draw in once with CSS (disabled for `prefers-reduced-motion`). |
 
 ## Running it
 
@@ -59,12 +59,11 @@ otherwise the built-in `GITHUB_TOKEN`.
 
 Also enable **Settings → Public profile → Contributions & activity → Include
 private contributions on my profile**, so private activity is counted in
-the calendar. Private repositories are never named: their summits are
-listed in the key only as private work.
+the calendar. Repository names never appear on the map itself.
 
 ## Automation
 
 `.github/workflows/terrain.yml` runs every Sunday at 03:17 UTC and on manual
 dispatch. It installs the pinned requirements, regenerates the map and
-commits as `github-actions[bot]`, but only if the SVGs or the README key
-actually changed. The only permission it needs is `contents: write`.
+commits as `github-actions[bot]`, but only if one of the SVGs actually
+changed. The only permission it needs is `contents: write`.

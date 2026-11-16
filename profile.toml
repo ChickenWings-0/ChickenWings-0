@@ -1,0 +1,14 @@
+# Text drawn over the terrain map in assets/terrain-{light,dark}.svg.
+# Edit freely, then run `python scripts/generate_terrain.py` (or wait for the
+# Sunday workflow). Paragraphs are wrapped automatically.
+
+greeting = "Hi, I'm"
+name = "Aksh Rastogi"
+tagline = "I build applied AI products, end to end."
+
+about = [
+  "Co-founder & CTO at MAITRI, an adaptive AI wellness companion that reads mood, voice, posture and heart rate. Lead engineer on OASIS, a studio for AI video and music generation.",
+  "Studying CS (AI & ML) at Delhi Technical Campus, GGSIPU, New Delhi. PyTorch and llama.cpp for models, FastAPI and React to ship them.",
+]
+
+site = "chickenwings.in"

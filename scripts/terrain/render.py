@@ -1,7 +1,8 @@
-"""Render contours, summits and map furniture as a self-contained SVG.
+"""Render the contour map, the "about me" text over it and the map furniture
+as a self-contained SVG.
 
 No external fonts, images or scripts: one system monospace stack, and a single
-optional CSS animation (contours draw in once, markers fade in after), which
+optional CSS animation (contours draw in once), which
 is switched off for prefers-reduced-motion. Without CSS animation support
 the SVG shows its final state.
 """
@@ -12,10 +13,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
+from .about import Profile, wrap
 from .contours import N_LEVELS, ContourLevel
 from .data import N_WEEKS, Activity
 from .field import HeightField
-from .labels import KNOCKOUT_R, MARKER_R, MARKER_SIZE, PlacedLabel
 
 # Sheet geometry, SVG user units.
 SHEET_W, SHEET_H = 1200, 594
@@ -25,6 +26,13 @@ FRAME_X, FRAME_Y = 40, 48           # top-left corner of the map neatline
 # with the latitude span matching the frame's aspect ratio (about 6').
 LON_W, LON_E = (8, 30), (8, 52)
 LAT_N, LAT_S = (47, 12), (47, 6)
+
+# The about text, in map units inside the frame. Contours fade out behind it.
+TEXT_X, TEXT_TOP = 40, 62
+TEXT_CHARS = 50                     # wrap width of the paragraphs, characters
+BODY_SIZE, BODY_LEADING = 16.5, 25
+FADE_FROM, FADE_TO = 0.51, 0.71     # fade ramp, as fractions of the map width
+FADE_FLOOR = 0.13                   # contour opacity behind the text
 
 # Monospace throughout, like a plotter-drawn survey sheet. Every platform
 # has one, and fixed advance widths keep the marginalia layout predictable.
@@ -75,8 +83,8 @@ def _style(t: Theme) -> str:
 text{{font-family:{MONO};fill:{t.ink}}}
 .muted{{fill:{t.muted}}}
 .caps{{text-transform:uppercase;letter-spacing:.08em}}
-.mk circle{{fill:{t.paper};stroke:{t.ink};stroke-width:1px}}
-.mk text{{font-weight:600;text-anchor:middle}}
+.ab text{{paint-order:stroke;stroke:{t.paper};stroke-width:5px;stroke-linejoin:round}}
+.site{{fill:{t.index}}}
 .c path{{fill:none;stroke-linecap:round;stroke-linejoin:round}}
 .n path{{stroke:{t.contour};stroke-width:{t.contour_width}px}}
 .i path{{stroke:{t.index};stroke-width:{t.index_width}px}}
@@ -86,19 +94,49 @@ text{{font-family:{MONO};fill:{t.ink}}}
 @keyframes fade{{from{{opacity:0}}}}
 .n path,.i path{{animation:draw 1.8s cubic-bezier(.45,0,.2,1) var(--d) both}}
 .s{{animation:fade 1.4s ease .2s both}}
-.lb{{animation:fade 1s ease 2.6s both}}
 .k path,.k{{animation:none}}
-@media (prefers-reduced-motion:reduce){{.n path,.i path,.s,.lb{{animation:none}}}}
+@media (prefers-reduced-motion:reduce){{.n path,.i path,.s{{animation:none}}}}
 """.strip()
 
 
-def _knockout(labels: list[PlacedLabel], width: float, height: float) -> str:
-    """Mask that clears contours and grid in a small disc around every
-    marker, the way printed maps knock lines out behind their symbols."""
-    discs = "".join(f'<circle cx="{_f(lb.x)}" cy="{_f(lb.y)}" r="{KNOCKOUT_R}"/>' for lb in labels)
-    return (f'<mask id="ko" maskUnits="userSpaceOnUse" x="-10" y="-10" width="{_f(width + 20)}" height="{_f(height + 20)}">'
-            f'<rect x="-10" y="-10" width="{_f(width + 20)}" height="{_f(height + 20)}" fill="#fff"/>'
-            f'{discs}</mask>')
+def _fade(width: float, height: float, active: bool) -> str:
+    """Mask that dims the terrain behind the about text, ramping back to
+    full strength towards the east."""
+    floor = FADE_FLOOR if active else 1
+    return (f'<linearGradient id="fg" x1="0" x2="1" y1="0" y2="0">'
+            f'<stop offset="0" stop-color="#fff" stop-opacity="{floor}"/>'
+            f'<stop offset="{FADE_FROM}" stop-color="#fff" stop-opacity="{floor}"/>'
+            f'<stop offset="{FADE_TO}" stop-color="#fff" stop-opacity="1"/></linearGradient>'
+            f'<mask id="fade" maskUnits="userSpaceOnUse" x="0" y="0" width="{_f(width)}" height="{_f(height)}">'
+            f'<rect width="{_f(width)}" height="{_f(height)}" fill="url(#fg)"/></mask>')
+
+
+def _about(profile: Profile, height: float) -> str:
+    """Greeting, name, tagline, paragraphs and the site, top-left of the map."""
+    out = ['<g class="ab">']
+    y = TEXT_TOP
+    if profile.greeting:
+        out.append(f'<text x="{TEXT_X}" y="{y}" font-size="14" class="caps muted">{escape(profile.greeting)}</text>')
+        y += 50
+    if profile.name:
+        out.append(f'<text x="{TEXT_X - 2}" y="{y}" font-size="48" font-weight="700">{escape(profile.name)}</text>')
+        y += 38
+    if profile.tagline:
+        out.append(f'<text x="{TEXT_X}" y="{y}" font-size="18" font-weight="600">{escape(profile.tagline)}</text>')
+        y += 36
+    for para in profile.about:
+        for line in wrap(para, TEXT_CHARS):
+            out.append(f'<text x="{TEXT_X}" y="{y}" font-size="{BODY_SIZE}">{escape(line)}</text>')
+            y += BODY_LEADING
+        y += 11
+    if profile.site:
+        out.append(f'<text x="{TEXT_X}" y="{y + 10}" font-size="{BODY_SIZE}" font-weight="700" class="site">'
+                   f'{escape(profile.site)} →</text>')
+        y += 10
+    if y > height - 24:
+        raise ValueError(f"the about text in profile.toml is too long for the map ({y:.0f} > {height - 24:.0f}); shorten it")
+    out.append("</g>")
+    return "\n".join(out)
 
 
 def _contours(levels: list[ContourLevel], t: Theme) -> str:
@@ -154,19 +192,9 @@ def _grid_and_ticks(field: HeightField, activity: Activity) -> tuple[str, str]:
     return "\n".join(grid), tick_path + "\n" + "\n".join(labels)
 
 
-def _marker(x: float, y: float, ref: int) -> str:
-    """Numbered summit marker: a small ring with the key number inside."""
-    return (f'<g class="mk"><circle cx="{_f(x)}" cy="{_f(y)}" r="{MARKER_R}"/>'
-            f'<text x="{_f(x)}" y="{_f(y + MARKER_SIZE * 0.35)}" font-size="{MARKER_SIZE}">{ref}</text></g>')
-
-
 def _swatch(x: float, y: float, cls: str) -> str:
     """A short, static sample of a contour line style for the legend."""
     return f'<g class="c {cls} k"><path d="M{_f(x)} {_f(y)}h26"/></g>'
-
-
-def _markers(labels: list[PlacedLabel]) -> str:
-    return '<g class="lb">' + "".join(_marker(lb.x, lb.y, lb.ref) for lb in labels) + "</g>"
 
 
 def _coordinates(field: HeightField) -> str:
@@ -196,13 +224,12 @@ def _marginalia(field: HeightField, activity: Activity, t: Theme) -> str:
                f'{activity.end.day} {activity.end.strftime("%b %Y")}</text>')
     out.append(f'<text x="{x0}" y="{top + 37}" font-size="10.5" class="muted">Relief: contributions per week, log scale</text>')
 
-    # Legend, two columns: line samples and the spot-height symbol.
+    # Legend: the three line styles.
     lx, ly, col = x0 + 292, top - 4, 262
     rows = [
         (lx, ly, _swatch(lx, ly, "i"), "Index contour"),
         (lx, ly + 24, _swatch(lx, ly + 24, "n"), f"Contour, interval 1/{N_LEVELS} of relief"),
         (lx + col, ly, _swatch(lx + col, ly, "s"), "Supplementary contour"),
-        (lx + col, ly + 24, _marker(lx + col + 13, ly + 24, 1), "Summit, see key"),
     ]
     for x, y, sample, text in rows:
         out.append(sample)
@@ -232,16 +259,16 @@ def _marginalia(field: HeightField, activity: Activity, t: Theme) -> str:
 
 # -- whole sheet -----------------------------------------------------------------
 
-def render_svg(field: HeightField, levels: list[ContourLevel], labels: list[PlacedLabel],
+def render_svg(field: HeightField, levels: list[ContourLevel], profile: Profile,
                activity: Activity, theme: Theme) -> str:
     t = theme
     W, H = field.width, field.height
     grid, ticks = _grid_and_ticks(field, activity)
-    named = ", ".join(f"{lb.ref} {lb.name} ({lb.month})" for lb in labels if lb.name)
-    title = f"{activity.login}: GitHub activity as a topographic map"
-    desc = (f"Contour map of {activity.total} contributions over the 52 weeks to {activity.end.isoformat()}. "
-            f"Time runs left to right, each ridge is a repository, height is contributions per week on a log scale."
-            + (f" Numbered summits: {named}." if named else ""))
+    has_text = bool(profile.plain_text())
+    title = f"{profile.greeting} {profile.name}".strip() if profile.name else f"{activity.login}: GitHub activity"
+    desc = ((profile.plain_text() + " ") if has_text else "") + (
+        f"Background: a contour map of the last 52 weeks of GitHub activity to {activity.end.isoformat()}. "
+        f"Time runs left to right, each ridge is a repository, height is contributions per week on a log scale.")
 
     glow = ('<filter id="glow" x="-5%" y="-5%" width="110%" height="110%">'
             '<feGaussianBlur stdDeviation="1.8" result="b"/>'
@@ -254,14 +281,14 @@ def render_svg(field: HeightField, levels: list[ContourLevel], labels: list[Plac
 {_style(t)}
 </style>
 <defs><clipPath id="clip"><rect width="{_f(W)}" height="{_f(H)}"/></clipPath>{glow}
-{_knockout(labels, W, H)}</defs>
+{_fade(W, H, has_text)}</defs>
 <rect width="{SHEET_W}" height="{SHEET_H}" fill="{t.paper}"/>
 <g transform="translate({FRAME_X} {FRAME_Y})">
-<g clip-path="url(#clip)"><g mask="url(#ko)">
+<g clip-path="url(#clip)"><g mask="url(#fade)">
 {grid}
 {_contours(levels, t)}
 </g></g>
-{_markers(labels)}
+{_about(profile, H)}
 <rect width="{_f(W)}" height="{_f(H)}" fill="none" stroke="{t.ink}" stroke-width="1.1"/>
 <rect x="-5" y="-5" width="{_f(W + 10)}" height="{_f(H + 10)}" fill="none" stroke="{t.ink}" stroke-width=".5"/>
 {ticks}
